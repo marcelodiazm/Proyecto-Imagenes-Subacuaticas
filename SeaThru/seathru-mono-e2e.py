@@ -11,15 +11,15 @@ import numpy as np
 import PIL.Image as pil
 import matplotlib as mpl
 import matplotlib.cm as cm
-#import pynng
-#from pynng import nng
 
 import torch
 from torchvision import transforms, datasets
 
-import deps.networks as networks
-from deps.layers import disp_to_depth
-from deps.utils import download_model_if_doesnt_exist
+sys.path.append("deps/monodepth2")
+
+import deps.monodepth2.networks as networks
+from deps.monodepth2.layers import disp_to_depth
+from deps.monodepth2.utils import download_model_if_doesnt_exist
 
 from seathru import *
 
@@ -47,13 +47,13 @@ def run(args):
     loaded_dict_enc = torch.load(encoder_path, map_location=device)
 
     # extract the height and width of image that this model was trained with
-    feed_height = loaded_dict_enc['height']
-    feed_width = loaded_dict_enc['width']
+    feed_height = (loaded_dict_enc['height'])
+    feed_width = (loaded_dict_enc['width'])
     filtered_dict_enc = {k: v for k, v in loaded_dict_enc.items() if k in encoder.state_dict()}
     encoder.load_state_dict(filtered_dict_enc)
     encoder.to(device)
     encoder.eval()
-
+    print(feed_height, feed_width)
     print("   Loading pretrained decoder")
     depth_decoder = networks.DepthDecoder(
         num_ch_enc=encoder.num_ch_enc, scales=range(4))
@@ -92,7 +92,7 @@ def run(args):
     depths = preprocess_monodepth_depth_map(mapped_im_depths, args.monodepth_add_depth,
                                             args.monodepth_multiply_depth)
     recovered = run_pipeline(np.array(img) / 255.0, depths, args)
-    # recovered = exposure.equalize_adapthist(scale(np.array(recovered)), clip_limit=0.03)
+    #recovered = exposure.equalize_adapthist(scale(np.array(recovered)), clip_limit=0.03)
     sigma_est = estimate_sigma(recovered, multichannel=True, average_sigmas=True) / 10.0
     recovered = denoise_tv_chambolle(recovered, sigma_est, multichannel=True)
     im = Image.fromarray((np.round(recovered * 255.0)).astype(np.uint8))
