@@ -1,2 +1,0 @@
-El video de entrada se encuentra en el dataset que nos proporcionaron y dicho video se llama 
-"2022_08_05_06_00_00.mkv".
