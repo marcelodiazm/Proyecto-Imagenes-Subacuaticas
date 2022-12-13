@@ -101,5 +101,5 @@ def images(list_data):
 
     cv2.destroyAllWindows()
 
-names = ['data/seatru_antes.mp4', 'data/seatru_despues.avi', 'data/metodo2_antes.mp4', 'data/metodo2_despues.avi',  'data\data_video_1_preprocesado_seathru.avi', 'data\data_video_1_preprocesado_seathru_tracking.avi','data/video_1_preprocesado_wavenet.avi' , 'data/video_1_preprocesado_wavenet_tracking.avi']
+names = ['data/seatru_antes.mp4', 'data/seatru_despues.avi', 'data/metodo2_antes.mp4', 'data/metodo2_despues.avi',  'data/video_1_tracking.mp4', 'data\data_video_1_preprocesado_seathru_tracking.avi','data/video_1_tracking.mp4' , 'data/video_1_preprocesado_wavenet_tracking.avi']
 images(names)
