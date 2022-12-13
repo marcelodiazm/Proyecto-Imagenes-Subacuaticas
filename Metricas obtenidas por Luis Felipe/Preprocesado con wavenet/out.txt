@@ -1,0 +1,985 @@
+/home/mass_estimation/experiments/mmdetection/mmdet/utils/setup_env.py:48: UserWarning: Setting MKL_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed.
+  warnings.warn(
+2022-12-12 21:37:40,484 - mmdet - INFO - Distributed val: False
+2022-12-12 21:37:40,485 - mmdet - INFO - MMDetection Version: 2.25.1
+2022-12-12 21:37:40,485 - mmdet - INFO - Config:
+/home/mass_estimation/experiments/mmdetection/configs/_base_/models/mask_rcnn_r50_fpn.py
+# model settings
+model = dict(
+    type='MaskRCNN',
+    backbone=dict(
+        type='ResNet',
+        depth=50,
+        num_stages=4,
+        out_indices=(0, 1, 2, 3),
+        frozen_stages=1,
+        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_eval=True,
+        style='pytorch',
+        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50')),
+    neck=dict(
+        type='FPN',
+        in_channels=[256, 512, 1024, 2048],
+        out_channels=256,
+        num_outs=5),
+    rpn_head=dict(
+        type='RPNHead',
+        in_channels=256,
+        feat_channels=256,
+        anchor_generator=dict(
+            type='AnchorGenerator',
+            scales=[8],
+            ratios=[0.5, 1.0, 2.0],
+            strides=[4, 8, 16, 32, 64]),
+        bbox_coder=dict(
+            type='DeltaXYWHBBoxCoder',
+            target_means=[.0, .0, .0, .0],
+            target_stds=[1.0, 1.0, 1.0, 1.0]),
+        loss_cls=dict(
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        loss_bbox=dict(type='L1Loss', loss_weight=1.0)),
+    roi_head=dict(
+        type='StandardRoIHead',
+        bbox_roi_extractor=dict(
+            type='SingleRoIExtractor',
+            roi_layer=dict(type='RoIAlign', output_size=7, sampling_ratio=0),
+            out_channels=256,
+            featmap_strides=[4, 8, 16, 32]),
+        bbox_head=dict(
+            type='Shared2FCBBoxHead',
+            in_channels=256,
+            fc_out_channels=1024,
+            roi_feat_size=7,
+            num_classes=80,
+            bbox_coder=dict(
+                type='DeltaXYWHBBoxCoder',
+                target_means=[0., 0., 0., 0.],
+                target_stds=[0.1, 0.1, 0.2, 0.2]),
+            reg_class_agnostic=False,
+            loss_cls=dict(
+                type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
+            loss_bbox=dict(type='L1Loss', loss_weight=1.0)),
+        mask_roi_extractor=dict(
+            type='SingleRoIExtractor',
+            roi_layer=dict(type='RoIAlign', output_size=14, sampling_ratio=0),
+            out_channels=256,
+            featmap_strides=[4, 8, 16, 32]),
+        mask_head=dict(
+            type='FCNMaskHead',
+            num_convs=4,
+            in_channels=256,
+            conv_out_channels=256,
+            num_classes=80,
+            loss_mask=dict(
+                type='CrossEntropyLoss', use_mask=True, loss_weight=1.0))),
+    # model training and testing settings
+    train_cfg=dict(
+        rpn=dict(
+            assigner=dict(
+                type='MaxIoUAssigner',
+                pos_iou_thr=0.7,
+                neg_iou_thr=0.3,
+                min_pos_iou=0.3,
+                match_low_quality=True,
+                ignore_iof_thr=-1),
+            sampler=dict(
+                type='RandomSampler',
+                num=256,
+                pos_fraction=0.5,
+                neg_pos_ub=-1,
+                add_gt_as_proposals=False),
+            allowed_border=-1,
+            pos_weight=-1,
+            debug=False),
+        rpn_proposal=dict(
+            nms_pre=2000,
+            max_per_img=1000,
+            nms=dict(type='nms', iou_threshold=0.7),
+            min_bbox_size=0),
+        rcnn=dict(
+            assigner=dict(
+                type='MaxIoUAssigner',
+                pos_iou_thr=0.5,
+                neg_iou_thr=0.5,
+                min_pos_iou=0.5,
+                match_low_quality=True,
+                ignore_iof_thr=-1),
+            sampler=dict(
+                type='RandomSampler',
+                num=512,
+                pos_fraction=0.25,
+                neg_pos_ub=-1,
+                add_gt_as_proposals=True),
+            mask_size=28,
+            pos_weight=-1,
+            debug=False)),
+    test_cfg=dict(
+        rpn=dict(
+            nms_pre=1000,
+            max_per_img=1000,
+            nms=dict(type='nms', iou_threshold=0.7),
+            min_bbox_size=0),
+        rcnn=dict(
+            score_thr=0.05,
+            nms=dict(type='nms', iou_threshold=0.5),
+            max_per_img=100,
+            mask_thr_binary=0.5)))
+
+/home/mass_estimation/experiments/mmdetection/configs/_base_/datasets/coco_instance.py
+# dataset settings
+dataset_type = 'CocoDataset'
+data_root = 'data/coco/'
+img_norm_cfg = dict(
+    mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
+train_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
+    dict(type='Resize', img_scale=(1333, 800), keep_ratio=True),
+    dict(type='RandomFlip', flip_ratio=0.5),
+    dict(type='Normalize', **img_norm_cfg),
+    dict(type='Pad', size_divisor=32),
+    dict(type='DefaultFormatBundle'),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks']),
+]
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(
+        type='MultiScaleFlipAug',
+        img_scale=(1333, 800),
+        flip=False,
+        transforms=[
+            dict(type='Resize', keep_ratio=True),
+            dict(type='RandomFlip'),
+            dict(type='Normalize', **img_norm_cfg),
+            dict(type='Pad', size_divisor=32),
+            dict(type='ImageToTensor', keys=['img']),
+            dict(type='Collect', keys=['img']),
+        ])
+]
+data = dict(
+    samples_per_gpu=2,
+    workers_per_gpu=2,
+    train=dict(
+        type=dataset_type,
+        ann_file=data_root + 'annotations/instances_train2017.json',
+        img_prefix=data_root + 'train2017/',
+        pipeline=train_pipeline),
+    val=dict(
+        type=dataset_type,
+        ann_file=data_root + 'annotations/instances_val2017.json',
+        img_prefix=data_root + 'val2017/',
+        pipeline=test_pipeline),
+    test=dict(
+        type=dataset_type,
+        ann_file=data_root + 'annotations/instances_val2017.json',
+        img_prefix=data_root + 'val2017/',
+        pipeline=test_pipeline))
+evaluation = dict(metric=['bbox', 'segm'])
+
+/home/mass_estimation/experiments/mmdetection/configs/_base_/schedules/schedule_1x.py
+# optimizer
+optimizer = dict(type='SGD', lr=0.02, momentum=0.9, weight_decay=0.0001)
+optimizer_config = dict(grad_clip=None)
+# learning policy
+lr_config = dict(
+    policy='step',
+    warmup='linear',
+    warmup_iters=500,
+    warmup_ratio=0.001,
+    step=[8, 11])
+runner = dict(type='EpochBasedRunner', max_epochs=12)
+
+/home/mass_estimation/experiments/mmdetection/configs/_base_/default_runtime.py
+checkpoint_config = dict(interval=1)
+# yapf:disable
+log_config = dict(
+    interval=50,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        # dict(type='TensorboardLoggerHook')
+    ])
+# yapf:enable
+custom_hooks = [dict(type='NumClassCheckHook')]
+
+dist_params = dict(backend='nccl')
+log_level = 'INFO'
+load_from = None
+resume_from = None
+workflow = [('train', 1)]
+
+# disable opencv multithreading to avoid system being overloaded
+opencv_num_threads = 0
+# set multi-process start method as `fork` to speed up the training
+mp_start_method = 'fork'
+
+# Default setting for scaling LR automatically
+#   - `enable` means enable scaling LR automatically
+#       or not by default.
+#   - `base_batch_size` = (8 GPUs) x (2 samples per GPU).
+auto_scale_lr = dict(enable=False, base_batch_size=16)
+
+/home/mass_estimation/experiments/mmdetection/configs/mask_rcnn/mask_rcnn_regnetx-3.2GF_fpn_1x_coco.py
+_base_ = [
+    '../_base_/models/mask_rcnn_r50_fpn.py',
+    '../_base_/datasets/coco_instance.py',
+    '../_base_/schedules/schedule_1x.py', '../_base_/default_runtime.py'
+]
+model = dict(
+    backbone=dict(
+        _delete_=True,
+        type='RegNet',
+        arch='regnetx_3.2gf',
+        out_indices=(0, 1, 2, 3),
+        frozen_stages=1,
+        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_eval=True,
+        style='pytorch',
+        init_cfg=dict(
+            type='Pretrained', checkpoint='open-mmlab://regnetx_3.2gf')),
+    neck=dict(
+        type='FPN',
+        in_channels=[96, 192, 432, 1008],
+        out_channels=256,
+        num_outs=5))
+img_norm_cfg = dict(
+    # The mean and std are used in PyCls when training RegNets
+    mean=[103.53, 116.28, 123.675],
+    std=[57.375, 57.12, 58.395],
+    to_rgb=False)
+train_pipeline = [
+    # Images are converted to float32 directly after loading in PyCls
+    dict(type='LoadImageFromFile'),
+    dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
+    dict(type='Resize', img_scale=(1333, 800), keep_ratio=True),
+    dict(type='RandomFlip', flip_ratio=0.5),
+    dict(type='Normalize', **img_norm_cfg),
+    dict(type='Pad', size_divisor=32),
+    dict(type='DefaultFormatBundle'),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks']),
+]
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(
+        type='MultiScaleFlipAug',
+        img_scale=(1333, 800),
+        flip=False,
+        transforms=[
+            dict(type='Resize', keep_ratio=True),
+            dict(type='RandomFlip'),
+            dict(type='Normalize', **img_norm_cfg),
+            dict(type='Pad', size_divisor=32),
+            dict(type='ImageToTensor', keys=['img']),
+            dict(type='Collect', keys=['img']),
+        ])
+]
+data = dict(
+    train=dict(pipeline=train_pipeline),
+    val=dict(pipeline=test_pipeline),
+    test=dict(pipeline=test_pipeline))
+optimizer = dict(type='SGD', lr=0.02, momentum=0.9, weight_decay=0.00005)
+
+/home/mass_estimation/experiments/mmdetection/configs/mask_rcnn/mask_rcnn_bg_regnetx-12GF_fpn_salmons_uw.py
+_base_ = './mask_rcnn_regnetx-3.2GF_fpn_1x_coco.py'
+model = dict(
+    backbone=dict(
+        type='RegNet',
+        arch='regnetx_12gf',
+        out_indices=(0, 1, 2, 3),
+        frozen_stages=1,
+        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_eval=True,
+        style='pytorch',
+        init_cfg=dict(
+            type='Pretrained', checkpoint='open-mmlab://regnetx_12gf')),
+    neck=dict(
+        type='FPN',
+        in_channels=[224, 448, 896, 2240],
+        out_channels=256,
+        num_outs=5),
+    roi_head=dict(
+        bbox_head=dict(
+            num_classes=1
+        ),
+        mask_head=dict(
+            num_classes=1
+        )
+    )
+
+)
+
+data = dict(
+    train = dict(
+        type='SalmonDataset',
+        classes=["salmon"],
+        ann_file='datasets/salmons_uw/COCO_annotations/train.json',
+        img_prefix='datasets/salmons_uw/images/Train',
+    ),
+    val = dict(
+        type='SalmonDataset',
+        classes=["salmon"],
+        ann_file='datasets/salmons_uw/COCO_annotations/val.json',
+        img_prefix='datasets/salmons_uw/images/Val',
+    ),
+    test = dict(
+        type='SalmonDataset',
+        classes=["salmon"],
+        ann_file='datasets/salmons_uw/COCO_annotations/val.json',
+        img_prefix='datasets/salmons_uw/images/Val',
+    )
+)
+
+runner = dict(max_epochs=60)
+workflow=[("train",1), ("val",1)]
+load_from = "checkpoints/mask_rcnn_regnetx-12GF_fpn_1x_coco_20200517_180552-b538bd8b.pth"
+lr_config = None
+evaluation = dict(_delete_=True, interval=1, metric=['bbox', 'segm'])
+log_config = dict(interval=1, hooks=[dict(type='TensorboardLoggerHook', interval=1)])
+optimizer = dict(_delete_=True, type='Adam', lr=0.0001)
+checkpoint_config = dict(interval=-1)
+loading annotations into memory...
+Done (t=0.01s)
+creating index...
+index created!
+load checkpoint from local path: /home/mass_estimation/experiments/salmon_segmentation/checkpoints/experiments/ExperimentID_1/best_segm_mAP_stage2_epoch8.pth
+[                                                  ] 0/52, elapsed: 0s, ETA:[                                 ] 1/52, 0.0 task/s, elapsed: 27s, ETA:  1366s[>                                ] 2/52, 0.1 task/s, elapsed: 29s, ETA:   733s[>                                ] 3/52, 0.1 task/s, elapsed: 32s, ETA:   530s[>>                               ] 4/52, 0.1 task/s, elapsed: 34s, ETA:   407s[>>>                              ] 5/52, 0.1 task/s, elapsed: 41s, ETA:   382s[>>>                              ] 6/52, 0.1 task/s, elapsed: 42s, ETA:   319s[>>>>                             ] 7/52, 0.1 task/s, elapsed: 77s, ETA:   492s[>>>>>                            ] 8/52, 0.1 task/s, elapsed: 78s, ETA:   431s[>>>>>                            ] 9/52, 0.1 task/s, elapsed: 79s, ETA:   376s[>>>>>>                          ] 10/52, 0.1 task/s, elapsed: 79s, ETA:   332s[>>>>>>                          ] 11/52, 0.1 task/s, elapsed: 79s, ETA:   296s[>>>>>>>                         ] 12/52, 0.2 task/s, elapsed: 80s, ETA:   266s[>>>>>>>>                        ] 13/52, 0.2 task/s, elapsed: 80s, ETA:   241s[>>>>>>>>                        ] 14/52, 0.2 task/s, elapsed: 81s, ETA:   219s[>>>>>>>>>                       ] 15/52, 0.2 task/s, elapsed: 81s, ETA:   200s[>>>>>>>>>                       ] 16/52, 0.2 task/s, elapsed: 81s, ETA:   183s[>>>>>>>>>>                      ] 17/52, 0.2 task/s, elapsed: 81s, ETA:   168s[>>>>>>>>>>>                     ] 18/52, 0.2 task/s, elapsed: 82s, ETA:   154s[>>>>>>>>>>>                     ] 19/52, 0.2 task/s, elapsed: 82s, ETA:   143s[>>>>>>>>>>>>                    ] 20/52, 0.2 task/s, elapsed: 83s, ETA:   132s[>>>>>>>>>>>>                    ] 21/52, 0.3 task/s, elapsed: 83s, ETA:   122s[>>>>>>>>>>>>>                   ] 22/52, 0.3 task/s, elapsed: 83s, ETA:   114s[>>>>>>>>>>>>>>                  ] 23/52, 0.3 task/s, elapsed: 85s, ETA:   107s[>>>>>>>>>>>>>>                  ] 24/52, 0.3 task/s, elapsed: 86s, ETA:   100s[>>>>>>>>>>>>>>>                 ] 25/52, 0.3 task/s, elapsed: 87s, ETA:    94s[>>>>>>>>>>>>>>>>                ] 26/52, 0.3 task/s, elapsed: 88s, ETA:    88s[>>>>>>>>>>>>>>>>                ] 27/52, 0.3 task/s, elapsed: 89s, ETA:    82s[>>>>>>>>>>>>>>>>>               ] 28/52, 0.3 task/s, elapsed: 90s, ETA:    77s[>>>>>>>>>>>>>>>>>               ] 29/52, 0.3 task/s, elapsed: 90s, ETA:    72s[>>>>>>>>>>>>>>>>>>              ] 30/52, 0.3 task/s, elapsed: 91s, ETA:    67s[>>>>>>>>>>>>>>>>>>>             ] 31/52, 0.3 task/s, elapsed: 91s, ETA:    62s[>>>>>>>>>>>>>>>>>>>             ] 32/52, 0.3 task/s, elapsed: 91s, ETA:    57s[>>>>>>>>>>>>>>>>>>>>            ] 33/52, 0.4 task/s, elapsed: 92s, ETA:    53s[>>>>>>>>>>>>>>>>>>>>            ] 34/52, 0.4 task/s, elapsed: 92s, ETA:    49s[>>>>>>>>>>>>>>>>>>>>>           ] 35/52, 0.4 task/s, elapsed: 92s, ETA:    45s[>>>>>>>>>>>>>>>>>>>>>>          ] 36/52, 0.4 task/s, elapsed: 93s, ETA:    41s[>>>>>>>>>>>>>>>>>>>>>>          ] 37/52, 0.4 task/s, elapsed: 93s, ETA:    38s[>>>>>>>>>>>>>>>>>>>>>>>         ] 38/52, 0.4 task/s, elapsed: 93s, ETA:    34s[>>>>>>>>>>>>>>>>>>>>>>>>        ] 39/52, 0.4 task/s, elapsed: 93s, ETA:    31s[>>>>>>>>>>>>>>>>>>>>>>>>        ] 40/52, 0.4 task/s, elapsed: 93s, ETA:    28s[>>>>>>>>>>>>>>>>>>>>>>>>>       ] 41/52, 0.4 task/s, elapsed: 94s, ETA:    25s[>>>>>>>>>>>>>>>>>>>>>>>>>       ] 42/52, 0.4 task/s, elapsed: 94s, ETA:    22s[>>>>>>>>>>>>>>>>>>>>>>>>>>      ] 43/52, 0.5 task/s, elapsed: 94s, ETA:    20s[>>>>>>>>>>>>>>>>>>>>>>>>>>>     ] 44/52, 0.5 task/s, elapsed: 95s, ETA:    17s[>>>>>>>>>>>>>>>>>>>>>>>>>>>     ] 45/52, 0.5 task/s, elapsed: 95s, ETA:    15s[>>>>>>>>>>>>>>>>>>>>>>>>>>>>    ] 46/52, 0.5 task/s, elapsed: 96s, ETA:    12s[>>>>>>>>>>>>>>>>>>>>>>>>>>>>    ] 47/52, 0.5 task/s, elapsed: 96s, ETA:    10s[>>>>>>>>>>>>>>>>>>>>>>>>>>>>>   ] 48/52, 0.5 task/s, elapsed: 96s, ETA:     8s[>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>  ] 49/52, 0.5 task/s, elapsed: 97s, ETA:     6s[>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>  ] 50/52, 0.5 task/s, elapsed: 97s, ETA:     4s[>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> ] 51/52, 0.5 task/s, elapsed: 97s, ETA:     2s[>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>] 52/52, 0.5 task/s, elapsed: 97s, ETA:     0s2022-12-12 21:39:28,336 - mmdet - INFO - Evaluating proposal...
+2022-12-12 21:39:29,584 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.383
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = 0.664
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = 0.376
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=1000 ] = 0.172
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=1000 ] = 0.373
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=1000 ] = 0.468
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.536
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=300 ] = 0.536
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=1000 ] = 0.536
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=1000 ] = 0.417
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=1000 ] = 0.522
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=1000 ] = 0.592
+
+2022-12-12 21:39:29,584 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+2022-12-12 21:39:30,956 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.274
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = 0.521
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = 0.261
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=1000 ] = 0.014
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=1000 ] = 0.259
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=1000 ] = 0.484
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.411
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=300 ] = 0.411
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=1000 ] = 0.411
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=1000 ] = 0.088
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=1000 ] = 0.400
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=1000 ] = 0.539
+
+2022-12-12 21:39:31,097 - mmdet - INFO - Evaluating proposal...
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:31,267 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area=   all | maxDets=100 ] = 0.664
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area= small | maxDets=1000 ] = 0.348
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area=medium | maxDets=1000 ] = 0.663
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area= large | maxDets=1000 ] = 0.767
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=100 ] = 0.859
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=300 ] = 0.859
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=1000 ] = 0.859
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area= small | maxDets=1000 ] = 0.744
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=medium | maxDets=1000 ] = 0.866
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area= large | maxDets=1000 ] = 0.894
+
+2022-12-12 21:39:31,267 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:31,674 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area=   all | maxDets=100 ] = 0.521
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area= small | maxDets=1000 ] = 0.030
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area=medium | maxDets=1000 ] = 0.566
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area= large | maxDets=1000 ] = 0.788
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=100 ] = 0.712
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=300 ] = 0.712
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=1000 ] = 0.712
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area= small | maxDets=1000 ] = 0.179
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=medium | maxDets=1000 ] = 0.772
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area= large | maxDets=1000 ] = 0.847
+
+2022-12-12 21:39:31,814 - mmdet - INFO - Evaluating proposal...
+2022-12-12 21:39:32,010 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area=   all | maxDets=100 ] = 0.643
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area= small | maxDets=1000 ] = 0.315
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area=medium | maxDets=1000 ] = 0.632
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area= large | maxDets=1000 ] = 0.754
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=100 ] = 0.831
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=300 ] = 0.831
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=1000 ] = 0.831
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area= small | maxDets=1000 ] = 0.705
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=medium | maxDets=1000 ] = 0.832
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area= large | maxDets=1000 ] = 0.875
+
+2022-12-12 21:39:32,011 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:32,280 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area=   all | maxDets=100 ] = 0.486
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area= small | maxDets=1000 ] = 0.027
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area=medium | maxDets=1000 ] = 0.507
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area= large | maxDets=1000 ] = 0.765
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=100 ] = 0.677
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=300 ] = 0.677
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=1000 ] = 0.677
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area= small | maxDets=1000 ] = 0.167
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=medium | maxDets=1000 ] = 0.718
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area= large | maxDets=1000 ] = 0.824
+
+2022-12-12 21:39:32,401 - mmdet - INFO - Evaluating proposal...
+2022-12-12 21:39:32,546 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area=   all | maxDets=100 ] = 0.618
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area= small | maxDets=1000 ] = 0.277
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area=medium | maxDets=1000 ] = 0.613
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area= large | maxDets=1000 ] = 0.727
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=100 ] = 0.802
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=300 ] = 0.802
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=1000 ] = 0.802
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area= small | maxDets=1000 ] = 0.667
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=medium | maxDets=1000 ] = 0.807
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area= large | maxDets=1000 ] = 0.847
+
+2022-12-12 21:39:32,546 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:32,837 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area=   all | maxDets=100 ] = 0.443
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area= small | maxDets=1000 ] = 0.026
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area=medium | maxDets=1000 ] = 0.455
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area= large | maxDets=1000 ] = 0.703
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=100 ] = 0.629
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=300 ] = 0.629
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=1000 ] = 0.629
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area= small | maxDets=1000 ] = 0.154
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=medium | maxDets=1000 ] = 0.658
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area= large | maxDets=1000 ] = 0.773
+
+2022-12-12 21:39:32,998 - mmdet - INFO - Evaluating proposal...
+2022-12-12 21:39:33,188 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area=   all | maxDets=100 ] = 0.555
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area= small | maxDets=1000 ] = 0.243
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area=medium | maxDets=1000 ] = 0.548
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area= large | maxDets=1000 ] = 0.659
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=100 ] = 0.742
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=300 ] = 0.742
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=1000 ] = 0.742
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area= small | maxDets=1000 ] = 0.615
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=medium | maxDets=1000 ] = 0.748
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area= large | maxDets=1000 ] = 0.782
+
+2022-12-12 21:39:33,189 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:33,496 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area=   all | maxDets=100 ] = 0.404
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area= small | maxDets=1000 ] = 0.025
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area=medium | maxDets=1000 ] = 0.392
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area= large | maxDets=1000 ] = 0.675
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=100 ] = 0.591
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=300 ] = 0.591
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=1000 ] = 0.591
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area= small | maxDets=1000 ] = 0.141
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=medium | maxDets=1000 ] = 0.599
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area= large | maxDets=1000 ] = 0.745
+
+2022-12-12 21:39:33,617 - mmdet - INFO - Evaluating proposal...
+2022-12-12 21:39:33,771 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area=   all | maxDets=100 ] = 0.468
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area= small | maxDets=1000 ] = 0.203
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area=medium | maxDets=1000 ] = 0.467
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area= large | maxDets=1000 ] = 0.562
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=100 ] = 0.659
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=300 ] = 0.659
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=1000 ] = 0.659
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area= small | maxDets=1000 ] = 0.538
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=medium | maxDets=1000 ] = 0.658
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area= large | maxDets=1000 ] = 0.704
+
+2022-12-12 21:39:33,772 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:33,998 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area=   all | maxDets=100 ] = 0.349
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area= small | maxDets=1000 ] = 0.013
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area=medium | maxDets=1000 ] = 0.312
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area= large | maxDets=1000 ] = 0.630
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=100 ] = 0.522
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=300 ] = 0.522
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=1000 ] = 0.522
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area= small | maxDets=1000 ] = 0.103
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=medium | maxDets=1000 ] = 0.500
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area= large | maxDets=1000 ] = 0.694
+
+2022-12-12 21:39:34,117 - mmdet - INFO - Evaluating proposal...
+2022-12-12 21:39:34,275 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area=   all | maxDets=100 ] = 0.376
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area= small | maxDets=1000 ] = 0.157
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area=medium | maxDets=1000 ] = 0.380
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area= large | maxDets=1000 ] = 0.456
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=100 ] = 0.558
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=300 ] = 0.558
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=1000 ] = 0.558
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area= small | maxDets=1000 ] = 0.410
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=medium | maxDets=1000 ] = 0.545
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area= large | maxDets=1000 ] = 0.625
+
+2022-12-12 21:39:34,275 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:34,598 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area=   all | maxDets=100 ] = 0.261
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area= small | maxDets=1000 ] = 0.011
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area=medium | maxDets=1000 ] = 0.201
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area= large | maxDets=1000 ] = 0.532
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=100 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=300 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=1000 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area= small | maxDets=1000 ] = 0.090
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=medium | maxDets=1000 ] = 0.376
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area= large | maxDets=1000 ] = 0.606
+
+2022-12-12 21:39:34,767 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:35,126 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area=   all | maxDets=100 ] = 0.261
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area= small | maxDets=1000 ] = 0.011
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area=medium | maxDets=1000 ] = 0.201
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area= large | maxDets=1000 ] = 0.532
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=100 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=300 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=1000 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area= small | maxDets=1000 ] = 0.090
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=medium | maxDets=1000 ] = 0.376
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area= large | maxDets=1000 ] = 0.606
+
+2022-12-12 21:39:35,292 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:35,626 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area=   all | maxDets=100 ] = 0.521
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area= small | maxDets=1000 ] = 0.030
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area=medium | maxDets=1000 ] = 0.566
+ Average Precision  (AP) @[ IoU=0.50:0.50 | area= large | maxDets=1000 ] = 0.788
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=100 ] = 0.712
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=300 ] = 0.712
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=   all | maxDets=1000 ] = 0.712
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area= small | maxDets=1000 ] = 0.179
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area=medium | maxDets=1000 ] = 0.772
+ Average Recall     (AR) @[ IoU=0.50:0.50 | area= large | maxDets=1000 ] = 0.847
+
+2022-12-12 21:39:35,763 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:36,111 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area=   all | maxDets=100 ] = 0.486
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area= small | maxDets=1000 ] = 0.027
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area=medium | maxDets=1000 ] = 0.507
+ Average Precision  (AP) @[ IoU=0.55:0.55 | area= large | maxDets=1000 ] = 0.765
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=100 ] = 0.677
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=300 ] = 0.677
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=   all | maxDets=1000 ] = 0.677
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area= small | maxDets=1000 ] = 0.167
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area=medium | maxDets=1000 ] = 0.718
+ Average Recall     (AR) @[ IoU=0.55:0.55 | area= large | maxDets=1000 ] = 0.824
+
+2022-12-12 21:39:36,222 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:36,524 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area=   all | maxDets=100 ] = 0.443
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area= small | maxDets=1000 ] = 0.026
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area=medium | maxDets=1000 ] = 0.455
+ Average Precision  (AP) @[ IoU=0.60:0.60 | area= large | maxDets=1000 ] = 0.703
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=100 ] = 0.629
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=300 ] = 0.629
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=   all | maxDets=1000 ] = 0.629
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area= small | maxDets=1000 ] = 0.154
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area=medium | maxDets=1000 ] = 0.658
+ Average Recall     (AR) @[ IoU=0.60:0.60 | area= large | maxDets=1000 ] = 0.773
+
+2022-12-12 21:39:36,630 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:36,841 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area=   all | maxDets=100 ] = 0.404
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area= small | maxDets=1000 ] = 0.025
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area=medium | maxDets=1000 ] = 0.392
+ Average Precision  (AP) @[ IoU=0.65:0.65 | area= large | maxDets=1000 ] = 0.675
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=100 ] = 0.591
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=300 ] = 0.591
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=   all | maxDets=1000 ] = 0.591
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area= small | maxDets=1000 ] = 0.141
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area=medium | maxDets=1000 ] = 0.599
+ Average Recall     (AR) @[ IoU=0.65:0.65 | area= large | maxDets=1000 ] = 0.745
+
+2022-12-12 21:39:36,948 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:37,285 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area=   all | maxDets=100 ] = 0.349
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area= small | maxDets=1000 ] = 0.013
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area=medium | maxDets=1000 ] = 0.312
+ Average Precision  (AP) @[ IoU=0.70:0.70 | area= large | maxDets=1000 ] = 0.630
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=100 ] = 0.522
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=300 ] = 0.522
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=   all | maxDets=1000 ] = 0.522
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area= small | maxDets=1000 ] = 0.103
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area=medium | maxDets=1000 ] = 0.500
+ Average Recall     (AR) @[ IoU=0.70:0.70 | area= large | maxDets=1000 ] = 0.694
+
+2022-12-12 21:39:37,438 - mmdet - INFO - Evaluating segm...
+/home/mass_estimation/experiments/mmdetection/mmdet/datasets/coco.py:470: UserWarning: The key "bbox" is deleted for more accurate mask AP of small/medium/large instances since v2.12.0. This does not change the overall mAP calculation.
+  warnings.warn(
+/usr/local/lib/python3.8/dist-packages/pycocotools/cocoeval.py:378: DeprecationWarning: `np.float` is a deprecated alias for the builtin `float`. To silence this warning, use `float` by itself. Doing this will not modify any behavior and is safe. If you specifically wanted the numpy scalar type, use `np.float64` here.
+Deprecated in NumPy 1.20; for more details and guidance: https://numpy.org/devdocs/release/1.20.0-notes.html#deprecations
+  tp_sum = np.cumsum(tps, axis=1).astype(dtype=np.float)
+<__array_function__ internals>:180: DeprecationWarning: Calling nonzero on 0d arrays is deprecated, as it behaves surprisingly. Use `atleast_1d(cond).nonzero()` if the old behavior was intended. If the context of this warning is of the form `arr[nonzero(cond)]`, just use `arr[cond]`.
+2022-12-12 21:39:37,708 - mmdet - INFO - 
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area=   all | maxDets=100 ] = 0.261
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=1000 ] = -1.000
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area= small | maxDets=1000 ] = 0.011
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area=medium | maxDets=1000 ] = 0.201
+ Average Precision  (AP) @[ IoU=0.75:0.75 | area= large | maxDets=1000 ] = 0.532
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=100 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=300 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=   all | maxDets=1000 ] = 0.431
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area= small | maxDets=1000 ] = 0.090
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area=medium | maxDets=1000 ] = 0.376
+ Average Recall     (AR) @[ IoU=0.75:0.75 | area= large | maxDets=1000 ] = 0.606
+
+2022-12-12 21:39:37,719 - mmdet - INFO - Memory allocated after test metrics
+2022-12-12 21:39:37,722 - mmdet - INFO - Max memory used by the model: 2941MB
+2022-12-12 21:39:37,722 - mmdet - INFO - Current memory allocated: 252MB
+2022-12-12 21:39:37,724 - mmdet - INFO - Memory summary: |===========================================================================|
+|                  PyTorch CUDA memory summary, device ID 0                 |
+|---------------------------------------------------------------------------|
+|            CUDA OOMs: 0            |        cudaMalloc retries: 1         |
+|===========================================================================|
+|        Metric         | Cur Usage  | Peak Usage | Tot Alloc  | Tot Freed  |
+|---------------------------------------------------------------------------|
+| Allocated memory      |  257958 KB |    2941 MB |  432162 MB |  431910 MB |
+|       from large pool |  244272 KB |    2924 MB |  430775 MB |  430537 MB |
+|       from small pool |   13686 KB |      20 MB |    1387 MB |    1373 MB |
+|---------------------------------------------------------------------------|
+| Active memory         |  257958 KB |    2941 MB |  432162 MB |  431910 MB |
+|       from large pool |  244272 KB |    2924 MB |  430775 MB |  430537 MB |
+|       from small pool |   13686 KB |      20 MB |    1387 MB |    1373 MB |
+|---------------------------------------------------------------------------|
+| GPU reserved memory   |    3404 MB |    3404 MB |    5276 MB |    1872 MB |
+|       from large pool |    3382 MB |    3382 MB |    5252 MB |    1870 MB |
+|       from small pool |      22 MB |      22 MB |      24 MB |       2 MB |
+|---------------------------------------------------------------------------|
+| Non-releasable memory |   12378 KB |    1876 MB |  428549 MB |  428537 MB |
+|       from large pool |   11728 KB |    1873 MB |  426833 MB |  426821 MB |
+|       from small pool |     650 KB |       4 MB |    1716 MB |    1715 MB |
+|---------------------------------------------------------------------------|
+| Allocations           |     352    |     413    |   49818    |   49466    |
+|       from large pool |      55    |      69    |   16077    |   16022    |
+|       from small pool |     297    |     351    |   33741    |   33444    |
+|---------------------------------------------------------------------------|
+| Active allocs         |     352    |     413    |   49818    |   49466    |
+|       from large pool |      55    |      69    |   16077    |   16022    |
+|       from small pool |     297    |     351    |   33741    |   33444    |
+|---------------------------------------------------------------------------|
+| GPU reserved segments |      31    |      33    |      37    |       6    |
+|       from large pool |      20    |      22    |      25    |       5    |
+|       from small pool |      11    |      11    |      12    |       1    |
+|---------------------------------------------------------------------------|
+| Non-releasable allocs |       7    |      26    |   22163    |   22156    |
+|       from large pool |       4    |      14    |    9142    |    9138    |
+|       from small pool |       3    |      18    |   13021    |   13018    |
+|---------------------------------------------------------------------------|
+| Oversize allocations  |       0    |       0    |       0    |       0    |
+|---------------------------------------------------------------------------|
+| Oversize GPU segments |       0    |       0    |       0    |       0    |
+|===========================================================================|
+
+2022-12-12 21:39:37,724 - mmdet - INFO - 
+OrderedDict([('AR@100', 0.536), ('AR@300', 0.536), ('AR@1000', 0.536), ('AR_s@1000', 0.417), ('AR_m@1000', 0.522), ('AR_l@1000', 0.592), ('segm_AR@100', 0.411), ('segm_AR@300', 0.411), ('segm_AR@1000', 0.411), ('segm_AR_s@1000', 0.088), ('segm_AR_m@1000', 0.4), ('segm_AR_l@1000', 0.539), ('segm_mAP_copypaste', '0.261 -1.000 -1.000 0.011 0.201 0.532'), ('segm_mAP', 0.261), ('segm_mAP_50', -1.0), ('segm_mAP_75', -1.0), ('segm_mAP_s', 0.011), ('segm_mAP_m', 0.201), ('segm_mAP_l', 0.532)])
+2022-12-12 21:39:37,737 - mmdet - INFO - FPS of inference without COCO metrics: 0.5332210653252073
+2022-12-12 21:39:37,737 - mmdet - INFO - FPS of inference with COCO metrics: 0.5183867931592971
+2022-12-12 21:39:37,759 - mmdet - INFO - The current RAM memory used: 5.5MB
+2022-12-12 21:39:37,759 - mmdet - INFO - The peak RAM memory used: 376.0MB
+2022-12-12 21:39:37,759 - mmdet - INFO - The tracemalloc overhead in the RAM memory used: 4.5MB
+Loading and preparing results...
+DONE (t=0.01s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *bbox*
+DONE (t=1.00s).
+Accumulating evaluation results...
+DONE (t=0.22s).
+Loading and preparing results...
+DONE (t=0.04s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=1.12s).
+Accumulating evaluation results...
+DONE (t=0.18s).
+Loading and preparing results...
+DONE (t=0.01s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *bbox*
+DONE (t=0.12s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.02s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.20s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.01s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *bbox*
+DONE (t=0.14s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.03s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.18s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.01s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *bbox*
+DONE (t=0.10s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.02s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.21s).
+Accumulating evaluation results...
+DONE (t=0.04s).
+Loading and preparing results...
+DONE (t=0.01s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *bbox*
+DONE (t=0.14s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.02s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.23s).
+Accumulating evaluation results...
+DONE (t=0.03s).
+Loading and preparing results...
+DONE (t=0.01s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *bbox*
+DONE (t=0.11s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.02s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.16s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.01s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *bbox*
+DONE (t=0.12s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.02s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.17s).
+Accumulating evaluation results...
+DONE (t=0.03s).
+Loading and preparing results...
+DONE (t=0.04s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.25s).
+Accumulating evaluation results...
+DONE (t=0.04s).
+Loading and preparing results...
+DONE (t=0.04s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.23s).
+Accumulating evaluation results...
+DONE (t=0.04s).
+Loading and preparing results...
+DONE (t=0.04s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.24s).
+Accumulating evaluation results...
+DONE (t=0.04s).
+Loading and preparing results...
+DONE (t=0.03s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.23s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.02s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.14s).
+Accumulating evaluation results...
+DONE (t=0.02s).
+Loading and preparing results...
+DONE (t=0.03s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.25s).
+Accumulating evaluation results...
+DONE (t=0.04s).
+Loading and preparing results...
+DONE (t=0.03s)
+creating index...
+index created!
+Running per image evaluation...
+Evaluate annotation type *segm*
+DONE (t=0.18s).
+Accumulating evaluation results...
+DONE (t=0.04s).
